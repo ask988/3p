@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Minimal E-commerce — Single File</title>
+  <style>
+    :root{--bg:#f6f7fb;--card:#fff;--accent:#2563eb;--muted:#6b7280}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;background:var(--bg);color:#111}
+    header{background:var(--accent);color:#fff;padding:12px 20px;text-align:center;font-size:20px;font-weight:700;}
+    .app{display:flex;gap:16px;padding:18px;box-sizing:border-box;height:calc(100vh - 60px)}
+
+    .products{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-content:start}
+    .card{background:var(--card);border-radius:8px;padding:12px;box-shadow:0 1px 2px rgba(0,0,0,.05);min-width:0}
+    .title{font-weight:600;font-size:14px;margin:0 0 6px}
+    .desc{font-size:12px;color:var(--muted);margin:0 0 8px}
+    .price{font-weight:700;margin-bottom:8px}
+    .btn{display:inline-block;padding:8px 10px;border-radius:6px;background:var(--accent);color:#fff;text-decoration:none;font-size:13px;cursor:pointer;border:none}
+
+    .cart{width:340px;flex:0 0 340px}
+    .cart .card{display:flex;flex-direction:column;height:100%;padding:12px}
+    .cart h3{margin:0 0 8px}
+    .items{flex:1;overflow:auto;padding-right:6px}
+    .item{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px dashed #eee}
+    .item .meta{flex:1}
+    .small{font-size:12px;color:var(--muted)}
+    .qty{display:inline-flex;align-items:center;border-radius:6px;overflow:hidden}
+    .qty button{border:1px solid #e5e7eb;background:#fff;padding:4px 8px;cursor:pointer}
+    .qty span{padding:4px 8px;border-left:1px solid #eee;border-right:1px solid #eee}
+    .total{font-weight:800;font-size:16px;margin-top:10px}
+    .checkout{margin-top:12px}
+
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center}
+    .modal.open{display:flex}
+    .panel{width:480px;background:var(--card);padding:16px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+    .row{display:flex;gap:8px}
+    label{font-size:13px;color:var(--muted)}
+    input,textarea{width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;margin-top:6px;font-size:14px}
+    .foot{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+    .muted{color:var(--muted);font-size:13px}
+
+    @media (max-width:900px){
+      .app{flex-direction:column;padding:12px;height:auto}
+      .products{grid-template-columns:repeat(2,1fr)}
+      .cart{width:100%;flex-basis:auto}
+      .panel{width:92vw}
+    }
+    @media (max-width:520px){.products{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>🛍️ My Online Store</header>
+  <div class="app">
+    <main class="products" id="products"></main>
+
+    <aside class="cart card">
+      <h3>Shopping Cart</h3>
+      <div class="items" id="cart-items"></div>
+      <div class="small muted">Items: <span id="cart-count">0</span></div>
+      <div class="total">Total: ₹<span id="cart-total">0.00</span></div>
+      <div class="checkout">
+        <button class="btn" id="btn-checkout">Checkout</button>
+        <button class="btn" id="btn-clear" style="background:#6b7280;margin-left:8px">Clear</button>
+      </div>
+    </aside>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="panel">
+      <h3>Checkout</h3>
+      <div id="order-summary" class="small muted" style="margin-bottom:8px">Summary will appear here</div>
+      <div>
+        <label>Name</label>
+        <input id="c-name" placeholder="Full name" />
+      </div>
+      <div style="margin-top:8px">
+        <label>Address</label>
+        <textarea id="c-address" rows="3" placeholder="Street, City, Pincode"></textarea>
+      </div>
+      <div class="foot">
+        <div class="muted">Payment: Cash on Delivery (demo)</div>
+        <div>
+          <button class="btn" id="place-order">Place Order</button>
+          <button class="btn" id="close-modal" style="background:#e5e7eb;color:#111;margin-left:8px">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const products = [
+      {id:1,title:'Classic Tee',desc:'Soft cotton t-shirt — unisex',price:499},
+      {id:2,title:'Portable Charger',desc:'10,000 mAh power bank',price:1199},
+      {id:3,title:'Handmade Mug',desc:'Ceramic, dishwasher safe',price:799},
+      {id:4,title:'Notebook',desc:'A5 lined journal',price:299},
+      {id:5,title:'Wireless Earbuds',desc:'Bluetooth 5.3, compact',price:2499},
+      {id:6,title:'Canvas Tote',desc:'Durable, 100% cotton',price:399}
+    ];
+
+    const cart = new Map();
+    const productsEl = document.getElementById('products');
+    const cartItemsEl = document.getElementById('cart-items');
+    const cartCountEl = document.getElementById('cart-count');
+    const cartTotalEl = document.getElementById('cart-total');
+    const modal = document.getElementById('modal');
+    const orderSummary = document.getElementById('order-summary');
+
+    function renderProducts(){
+      productsEl.innerHTML = '';
+      products.forEach(p=>{
+        const c = document.createElement('article'); c.className='card';
+        c.innerHTML = `<h4 class="title">${p.title}</h4>
+          <div class="desc">${p.desc}</div>
+          <div class="price">₹${p.price.toFixed(2)}</div>
+          <div style="display:flex;gap:8px"><button class="btn" data-id="${p.id}">Add to cart</button>
+          <button class="btn" style="background:#e5e7eb;color:#111" data-view="${p.id}">View</button></div>`;
+        productsEl.appendChild(c);
+      });
+
+      productsEl.querySelectorAll('button[data-id]').forEach(b=>b.addEventListener('click',e=>addToCart(Number(e.currentTarget.dataset.id))));
+      productsEl.querySelectorAll('button[data-view]').forEach(b=>b.addEventListener('click',e=>viewProduct(Number(e.currentTarget.dataset.view))));
+    }
+
+    function viewProduct(id){
+      const p = products.find(x=>x.id===id);
+      if(!p) return;
+      const ok = confirm(`${p.title}\n\n${p.desc}\n\nPrice: ₹${p.price.toFixed(2)}\n\nAdd to cart?`);
+      if(ok) addToCart(id);
+    }
+
+    function addToCart(id,qty=1){
+      const p = products.find(x=>x.id===id); if(!p) return;
+      const entry = cart.get(id) || {product:p, qty:0};
+      entry.qty += qty; if(entry.qty<1) entry.qty = 1;
+      cart.set(id,entry);
+      renderCart();
+    }
+
+    function removeFromCart(id){ cart.delete(id); renderCart(); }
+    function changeQty(id,delta){
+      const entry = cart.get(id); if(!entry) return; entry.qty += delta; if(entry.qty<=0){cart.delete(id)}; renderCart();
+    }
+
+    function renderCart(){
+      cartItemsEl.innerHTML = '';
+      let total = 0, items = 0;
+      for(const [id,{product,qty}] of cart){
+        items += qty; total += product.price * qty;
+        const row = document.createElement('div'); row.className='item';
+        row.innerHTML = `<div class="meta"><div style="font-weight:600">${product.title}</div><div class="small">₹${product.price.toFixed(2)} x ${qty}</div></div>
+          <div style="text-align:right">
+            <div class="qty"><button data-minus="${id}">-</button><span>${qty}</span><button data-plus="${id}">+</button></div>
+            <div style="margin-top:6px"><button style="border:none;background:transparent;color:#dc2626;cursor:pointer;font-size:12px" data-remove="${id}">Remove</button></div>
+          </div>`;
+        cartItemsEl.appendChild(row);
+      }
+      cartCountEl.textContent = items;
+      cartTotalEl.textContent = total.toFixed(2);
+
+      cartItemsEl.querySelectorAll('button[data-plus]').forEach(b=>b.addEventListener('click',e=>changeQty(Number(e.currentTarget.dataset.plus),1)));
+      cartItemsEl.querySelectorAll('button[data-minus]').forEach(b=>b.addEventListener('click',e=>changeQty(Number(e.currentTarget.dataset.minus),-1)));
+      cartItemsEl.querySelectorAll('button[data-remove]').forEach(b=>b.addEventListener('click',e=>removeFromCart(Number(e.currentTarget.dataset.remove))));
+
+      updateOrderSummary();
+    }
+
+    function updateOrderSummary(){
+      const lines = [];
+      let total = 0;
+      for(const [id,{product,qty}] of cart){ lines.push(`${product.title} x${qty} — ₹${(product.price*qty).toFixed(2)}`); total += product.price*qty }
+      orderSummary.textContent = lines.length? lines.join('\n') + `\n\nTotal: ₹${total.toFixed(2)}` : 'Cart is empty';
+    }
+
+    document.getElementById('btn-clear').addEventListener('click',()=>{cart.clear();renderCart();});
+    document.getElementById('btn-checkout').addEventListener('click',()=>{
+      if(cart.size===0){alert('Cart is empty');return}
+      modal.classList.add('open');
+      updateOrderSummary();
+    });
+    document.getElementById('close-modal').addEventListener('click',()=>modal.classList.remove('open'));
+
+    document.getElementById('place-order').addEventListener('click',()=>{
+      const name = document.getElementById('c-name').value.trim();
+      const addr = document.getElementById('c-address').value.trim();
+      if(!name||!addr){alert('Please enter name and address');return}
+      const summary = orderSummary.textContent;
+      modal.classList.remove('open');
+      alert('Order placed!\n\n' + summary + `\n\nShip to: ${name}, ${addr}`);
+      cart.clear(); renderCart();
+      document.getElementById('c-name').value = '';
+      document.getElementById('c-address').value = '';
+    });
+
+    renderProducts(); renderCart();
+  </script>
+</body>
+</html>
